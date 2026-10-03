@@ -1,105 +1,83 @@
 package disk;
 
-
 import java.io.*;
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Stack;
+import java.util.ArrayDeque;
+import java.util.Deque;
 
 public class DiskManager {
     private String dmDir;
     private int pageSize;
-    private int pageCount;
-    private Stack<Integer> freePages;
-    private RandomAccessFile dbFile;
+    private int nbPages;                                     // nombre total de pages dans data.bin
+    private final Deque<Integer> freePages = new ArrayDeque<>(); // pages désallouées
+    private RandomAccessFile dataFile;                       // le méga fichier
 
-    public void Init(String dmDir, int pageSize) {
+    public void Init(String dmDir, int pageSize) throws IOException {
+        // 1. oublier l'état précédent
+        if (dataFile != null) dataFile.close();
+        nbPages = 0;
+        freePages.clear();
+
         this.dmDir = dmDir;
         this.pageSize = pageSize;
-        this.freePages = new Stack<>();
-        
-        File dir = new File(dmDir);
-        File metaFile = new File(dir, "dm.meta");
-        File dataFile = new File(dir, "db.bin");
 
-        // Réinitialisation / Effacement si changement de dossier[cite: 1]
-        try {
-            if (metaFile.exists() && dataFile.exists()) {
-                // Charger les métadonnées existantes[cite: 1]
-                try (DataInputStream dis = new DataInputStream(new FileInputStream(metaFile))) {
-                    int savedPageSize = dis.readInt();
-                    if (savedPageSize != pageSize) {
-                        throw new IllegalArgumentException("Incompatibilité de pageSize avec les données existantes");
-                    }
-                    this.pageCount = dis.readInt();
-                    int freePagesCount = dis.readInt();
-                    for (int i = 0; i < freePagesCount; i++) {
-                        this.freePages.push(dis.readInt());
-                    }
+        // 2. recharger les données si elles existent
+        File saveFile = new File(dmDir, "dm.save");
+        if (saveFile.exists()) {
+            try (DataInputStream in = new DataInputStream(new FileInputStream(saveFile))) {
+                int savedPageSize = in.readInt();
+                if (savedPageSize != pageSize) {
+                    throw new IllegalStateException("pageSize incompatible"); // à gérer au TP suivant
                 }
-            } else {
-                // Création du dossier et initialisation à zéro[cite: 1]
-                if (!dir.exists()) {
-                    dir.mkdirs();
-                }
-                this.pageCount = 0;
+                nbPages = in.readInt();
+                int nbFree = in.readInt();
+                for (int i = 0; i < nbFree; i++) freePages.add(in.readInt());
             }
+        }
 
-            this.dbFile = new RandomAccessFile(dataFile, "rw");
-        } catch (IOException e) {
-            e.printStackTrace();
+        // 3. ouvrir le méga fichier
+        dataFile = new RandomAccessFile(new File(dmDir, "data.bin"), "rw");
+    }
+
+    public void Save() throws IOException {
+        try (DataOutputStream out = new DataOutputStream(
+                new FileOutputStream(new File(dmDir, "dm.save")))) {
+            out.writeInt(pageSize);
+            out.writeInt(nbPages);
+            out.writeInt(freePages.size());
+            for (int idx : freePages) out.writeInt(idx);
         }
     }
 
-    public void Save() {
-        File metaFile = new File(dmDir, "dm.meta");
-        try (DataOutputStream dos = new DataOutputStream(new FileOutputStream(metaFile))) {
-            dos.writeInt(pageSize);
-            dos.writeInt(pageCount);
-            dos.writeInt(freePages.size());
-            for (Integer pageNo : freePages) {
-                dos.writeInt(pageNo);
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
-
-    public IPageId AllocPage() {
-        int pageNo;
+    public IPageId AllocPage() throws IOException {
         if (!freePages.isEmpty()) {
-            pageNo = freePages.pop(); // Réutilisation[cite: 1]
-        } else {
-            pageNo = pageCount++;     // Nouvelle page[cite: 1]
+            return new PageId(freePages.poll());
         }
-        return new PageId(pageNo);
+        int idx = nbPages;
+        nbPages++;
+        dataFile.setLength((long) nbPages * pageSize);
+        return new PageId(idx);
     }
 
-    public void ReadPage(IPageId ipid, ByteBuffer buffer) {
-        PageId pid = (PageId) ipid;
-        long offset = (long) pid.getPageNo() * pageSize;
-        try {
-            dbFile.seek(offset);
-            dbFile.readFully(buffer.array(), buffer.arrayOffset(), pageSize);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+    public void ReadPage(IPageId ipid, ByteBuffer buffer) throws IOException {
+        int idx = ((PageId) ipid).getPageIdx();
+        byte[] tmp = new byte[pageSize];
+        dataFile.seek((long) idx * pageSize);
+        dataFile.readFully(tmp);
+        buffer.clear();
+        buffer.put(tmp);
     }
 
-    public void WritePage(IPageId ipid, ByteBuffer buffer) {
-        PageId pid = (PageId) ipid;
-        long offset = (long) pid.getPageNo() * pageSize;
-        try {
-            dbFile.seek(offset);
-            dbFile.write(buffer.array(), buffer.arrayOffset(), pageSize);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+    public void WritePage(IPageId ipid, ByteBuffer buffer) throws IOException {
+        int idx = ((PageId) ipid).getPageIdx();
+        byte[] tmp = new byte[pageSize];
+        buffer.rewind();
+        buffer.get(tmp);
+        dataFile.seek((long) idx * pageSize);
+        dataFile.write(tmp);
     }
 
     public void DeallocPage(IPageId ipid) {
-        PageId pid = (PageId) ipid;
-        freePages.push(pid.getPageNo());
+        freePages.add(((PageId) ipid).getPageIdx());
     }
 }
