@@ -8,9 +8,9 @@ import java.util.Deque;
 public class DiskManager {
     private String dmDir;
     private int pageSize;
-    private int nbPages;                                     // nombre total de pages dans data.bin
-    private final Deque<Integer> freePages = new ArrayDeque<>(); // pages désallouées
-    private RandomAccessFile dataFile;                       // le méga fichier
+    private int nbPages;
+    private final Deque<Integer> freePages = new ArrayDeque<>();
+    private RandomAccessFile dataFile;
 
     public void Init(String dmDir, int pageSize) throws IOException {
         // 1. oublier l'état précédent
@@ -27,7 +27,7 @@ public class DiskManager {
             try (DataInputStream in = new DataInputStream(new FileInputStream(saveFile))) {
                 int savedPageSize = in.readInt();
                 if (savedPageSize != pageSize) {
-                    throw new IllegalStateException("pageSize incompatible"); // à gérer au TP suivant
+                    throw new IllegalStateException("pageSize incompatible");
                 }
                 nbPages = in.readInt();
                 int nbFree = in.readInt();
