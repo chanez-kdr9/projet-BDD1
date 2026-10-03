@@ -1,28 +1,17 @@
 package disk;
 
-import java.util.Objects;
-
 public class PageId implements IPageId {
-    private final int pageNo;
+    private final int pageIdx;
 
-    public PageId(int pageNo) {
-        this.pageNo = pageNo;
-    }
+    public PageId(int pageIdx) { this.pageIdx = pageIdx; }
 
-    public int getPageNo() {
-        return pageNo;
-    }
+    public int getPageIdx() { return pageIdx; }
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
-        PageId pageId = (PageId) o;
-        return pageNo == pageId.pageNo;
+        return o instanceof PageId p && p.pageIdx == pageIdx;
     }
 
     @Override
-    public int hashCode() {
-        return Objects.hash(pageNo);
-    }
+    public int hashCode() { return pageIdx; }
 }
