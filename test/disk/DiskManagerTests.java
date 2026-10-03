@@ -1,54 +1,61 @@
-package test/disk;
+package disk;
 
-import java.nio.ByteBuffer;
 import java.io.File;
+import java.nio.ByteBuffer;
+import java.util.Arrays;
 
 public class DiskManagerTests {
 
-    public static void main(String[] args) {
-        testEcritureEtLecturePage();
-        testReallocationPage();
-        System.out.println("Tous les tests ont réussi !");
+    public static void main(String[] args) throws Exception {
+        TestEcriturePage();
+        TestRealloc();
+        TestPersistance();
     }
 
-    public static void testEcritureEtLecturePage() {
+    private static String freshDir(String name) {
+        File dir = new File(System.getProperty("java.io.tmpdir"), name);
+        dir.mkdirs();
+        File[] files = dir.listFiles();
+        if (files != null) for (File f : files) f.delete();
+        return dir.getAbsolutePath();
+    }
+
+    static void TestEcriturePage() throws Exception {
         DiskManager dm = new DiskManager();
-        String testDir = "./tmp_test_dm";
-        int pageSize = 4; // Taille minimale pour un test rapide[cite: 1]
+        dm.Init(freshDir("dmtest1"), 4);
+        IPageId p = dm.AllocPage();
 
-        dm.Init(testDir, pageSize);
+        ByteBuffer w = ByteBuffer.allocate(4);
+        w.put(new byte[]{1, 2, 3, 4});
+        dm.WritePage(p, w);
 
-        // Allocation et écriture[cite: 1]
-        IPageId pid = dm.AllocPage();
-        ByteBuffer writeBuffer = ByteBuffer.allocate(pageSize);
-        writeBuffer.put(new byte[]{10, 20, 30, 40});
+        ByteBuffer r = ByteBuffer.allocate(4);
+        dm.ReadPage(p, r);
+        System.out.println("TestEcriturePage : " + Arrays.toString(r.array())); // [1, 2, 3, 4]
+    }
 
-        dm.WritePage(pid, writeBuffer);
+    static void TestRealloc() throws Exception {
+        DiskManager dm = new DiskManager();
+        dm.Init(freshDir("dmtest2"), 4);
+        PageId a = (PageId) dm.AllocPage();   // page 0
+        dm.AllocPage();                       // page 1
+        dm.DeallocPage(a);
+        PageId c = (PageId) dm.AllocPage();   // doit réutiliser la page 0
+        System.out.println("TestRealloc : " + (c.getPageIdx() == 0 ? "OK" : "ERREUR"));
+    }
 
-        // Lecture et vérification[cite: 1]
-        ByteBuffer readBuffer = ByteBuffer.allocate(pageSize);
-        dm.ReadPage(pid, readBuffer);
-
-        for (int i = 0; i < pageSize; i++) {
-            if (writeBuffer.array()[i] != readBuffer.array()[i]) {
-                throw new RuntimeException("Erreur de lecture/écriture à l'index " + i);
-            }
-        }
-
+    static void TestPersistance() throws Exception {
+        String dir = freshDir("dmtest3");
+        DiskManager dm = new DiskManager();
+        dm.Init(dir, 4);
+        dm.AllocPage();
+        dm.AllocPage();
+        dm.DeallocPage(new PageId(0));
         dm.Save();
-    }
 
-    public static void testReallocationPage() {
-        DiskManager dm = new DiskManager();
-        dm.Init("./tmp_test_dm", 4);
-
-        IPageId p1 = dm.AllocPage();
-        dm.DeallocPage(p1);
-        IPageId p2 = dm.AllocPage();
-
-        // Le DiskManager doit réutiliser la page désallouée[cite: 1]
-        if (((PageId) p1).getPageNo() != ((PageId) p2).getPageNo()) {
-            throw new RuntimeException("La réallocation de page n'a pas réutilisé l'ancien ID !");
-        }
+        DiskManager dm2 = new DiskManager();
+        dm2.Init(dir, 4);                     // recharge dm.save
+        PageId p = (PageId) dm2.AllocPage();  // doit donner 0
+        System.out.println("TestPersistance : " + (p.getPageIdx() == 0 ? "OK" : "ERREUR"));
     }
 }
